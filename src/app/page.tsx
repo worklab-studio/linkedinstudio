@@ -51,6 +51,8 @@ export default function Page() {
   const [inputMessage, setInputMessage] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [editingPrompt, setEditingPrompt] = useState<PromptSection | null>(null)
+  const [editingPromptValue, setEditingPromptValue] = useState("")
+  const [editingProfile, setEditingProfile] = useState<ProfileId>("simmi")
   const [showToast, setShowToast] = useState(false)
   const [toastMessage, setToastMessage] = useState("")
   const [activeTab, setActiveTab] = useState<"chat" | "calendar">("chat")
@@ -110,14 +112,38 @@ export default function Page() {
     refreshPosts()
   }, [refreshPrompts, refreshPosts])
 
-  const handlePromptUpdate = async (section: PromptSection, value: string) => {
-    setPrompts(prev => ({
-      ...prev,
-      [section]: isProfileScoped(section)
-        ? { ...(prev[section] as Record<ProfileId, string>), [selectedProfile]: value }
-        : value,
-    }))
+  const updatePromptState = useCallback(
+    (section: PromptSection, value: string, profile: ProfileId) => {
+      setPrompts(prev => ({
+        ...prev,
+        [section]: isProfileScoped(section)
+          ? { ...(prev[section] as Record<ProfileId, string>), [profile]: value }
+          : value,
+      }))
+    },
+    []
+  )
+
+  const startEditingPrompt = (section: PromptSection) => {
+    setEditingPrompt(section)
+    setEditingProfile(selectedProfile)
+    setEditingPromptValue(getCurrentPrompt(section))
+  }
+
+  const cancelEditingPrompt = () => {
     setEditingPrompt(null)
+    setEditingPromptValue("")
+  }
+
+  const handlePromptSave = async () => {
+    if (!editingPrompt) return
+    const section = editingPrompt
+    const value = editingPromptValue
+    const profileForUpdate = isProfileScoped(section) ? editingProfile : selectedProfile
+
+    updatePromptState(section, value, profileForUpdate)
+    setEditingPrompt(null)
+    setEditingPromptValue("")
 
     try {
       const response = await fetch("/api/prompts", {
@@ -126,7 +152,7 @@ export default function Page() {
         body: JSON.stringify({
           section,
           content: value,
-          profile: isProfileScoped(section) ? selectedProfile : "global",
+          profile: isProfileScoped(section) ? profileForUpdate : "global",
         }),
       })
 
@@ -138,6 +164,7 @@ export default function Page() {
     } catch (error) {
       console.error("Error updating prompt", error)
       showToastWithMessage("Unable to sync prompt")
+      refreshPrompts()
     }
   }
 
@@ -805,20 +832,31 @@ When creating LinkedIn posts:
               <div key={section.id} className="border border-gray-200 rounded p-3">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-medium">{section.title}</h3>
-                  {editingPrompt === section.id ? (
-                    <button onClick={() => setEditingPrompt(null)} className="p-1 hover:bg-gray-100 rounded">
-                      <Save className="w-4 h-4" />
-                    </button>
-                  ) : (
-                    <button onClick={() => setEditingPrompt(section.id)} className="p-1 hover:bg-gray-100 rounded">
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {editingPrompt === section.id ? (
+                      <>
+                        <button onClick={handlePromptSave} className="p-1 hover:bg-gray-100 rounded" aria-label="Save prompt">
+                          <Save className="w-4 h-4" />
+                        </button>
+                        <button onClick={cancelEditingPrompt} className="p-1 hover:bg-gray-100 rounded" aria-label="Cancel editing">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => startEditingPrompt(section.id)}
+                        className="p-1 hover:bg-gray-100 rounded"
+                        aria-label={`Edit ${section.title}`}
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {editingPrompt === section.id ? (
                   <textarea
-                    value={getCurrentPrompt(section.id)}
-                    onChange={event => handlePromptUpdate(section.id, event.target.value)}
+                    value={editingPromptValue}
+                    onChange={event => setEditingPromptValue(event.target.value)}
                     className="w-full p-2 text-xs border border-gray-300 rounded resize-none focus:outline-none focus:ring-2 focus:ring-black"
                     rows={8}
                   />
