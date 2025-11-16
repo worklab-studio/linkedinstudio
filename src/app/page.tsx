@@ -1,5 +1,6 @@
 "use client"
 
+import type { JSX } from "react"
 import { useEffect, useRef, useState } from "react"
 import {
   Send,
@@ -168,12 +169,12 @@ export default function Page() {
     setEditingPrompt(null)
   }
 
-  const getCurrentPrompt = (section: PromptSection) => {
+  const getCurrentPrompt = (section: PromptSection): string => {
     const prompt = prompts[section]
     if (typeof prompt === "object" && !["company", "market", "linkedin", "master"].includes(section)) {
       return (prompt as Record<string, string>)[selectedProfile] || ""
     }
-    return prompt || ""
+    return typeof prompt === "string" ? prompt : ""
   }
 
   const buildSystemPrompt = () => {
