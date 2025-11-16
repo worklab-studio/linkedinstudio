@@ -1,7 +1,7 @@
 "use client"
 
 import type { JSX } from "react"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   Send,
   Copy,
@@ -19,6 +19,15 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import {
+  initialPrompts,
+  profiles,
+  promptSections,
+  type PromptState,
+  type PromptSection,
+  type ProfileId,
+  isProfileScoped,
+} from "@/lib/prompts"
 
 type Message = {
   role: "user" | "assistant"
@@ -26,112 +35,18 @@ type Message = {
 }
 
 type ScheduledPost = {
-  id: number
+  id: string
   content: string
   date: string
   time: string
   notes?: string
-  profile: string
+  profile: ProfileId
   profileName: string
   createdAt: string
 }
 
-type PromptSection = "master" | "about" | "tone" | "company" | "market" | "linkedin"
-
-type PromptState = {
-  master: string
-  about: Record<string, string>
-  tone: Record<string, string>
-  company: string
-  market: string
-  linkedin: string
-}
-
-const profiles = [
-  { id: "simmi", name: "Simmi Sen Roy" },
-  { id: "aastha", name: "Aastha Tomar" },
-  { id: "company", name: "Nextyou Company" },
-]
-
-const promptSections: { id: PromptSection; title: string }[] = [
-  { id: "master", title: "Master Prompt" },
-  { id: "about", title: "About" },
-  { id: "tone", title: "Tone Setting" },
-  { id: "company", title: "Company - Nextyou" },
-  { id: "market", title: "Market Research" },
-  { id: "linkedin", title: "LinkedIn Algorithm" },
-]
-
-const initialPrompts: PromptState = {
-  master: `You are an expert LinkedIn content writer for Nextyou, a career transformation platform. Your primary goals are:
-\n1. Create engaging, authentic content that resonates with professionals
-2. Balance professionalism with personality - be relatable, not corporate
-3. Drive meaningful engagement through value-driven posts
-4. Maintain consistency with Nextyou's brand voice and mission
-5. Optimize content for LinkedIn's algorithm while keeping it human-centered
-\nKey Content Principles:
-- Lead with value - every post should teach, inspire, or provide actionable insights
-- Use storytelling to make concepts relatable and memorable
-- Be concise yet comprehensive - respect the reader's time
-- Include clear takeaways or calls-to-action
-- Stay current with industry trends and conversations
-- Encourage dialogue and community building
-\nContent Strategy:
-- Mix educational content (60%), inspirational stories (25%), and company updates (15%)
-- Use data and examples to support claims
-- Address real pain points and challenges professionals face
-- Celebrate wins and learning moments
-- Foster a growth mindset and career empowerment
-\nAlways adapt your writing to the selected profile's unique voice while maintaining these core principles.`,
-  about: {
-    simmi: `Simmi Sen Roy - Founder & CEO of Nextyou
-- Serial entrepreneur and career transformation expert
-- 10+ years in EdTech and career development
-- Passionate about helping professionals unlock their potential
-- Speaker and thought leader in career growth strategies`,
-    aastha: `Aastha Tomar - Head of Content & Community at Nextyou
-- Content strategist with expertise in professional branding
-- Community builder focused on career development
-- Strong advocate for continuous learning and upskilling
-- Engaging storyteller who connects with professionals`,
-    company: `Nextyou - Career Transformation Platform
-- Leading platform for professional development and career transitions
-- Offers personalized coaching, skill development, and career guidance
-- Empowering professionals to achieve their next career milestone
-- Trusted by 10,000+ professionals across industries`,
-  },
-  tone: {
-    simmi: `Professional yet approachable, inspiring and motivational. Use personal anecdotes and insights. Be authentic and relatable. Focus on empowerment and growth mindset. Keep it conversational but authoritative.`,
-    aastha: `Warm, engaging, and community-focused. Use storytelling and relatable examples. Be encouraging and supportive. Create content that sparks conversation and builds connections. Friendly and accessible tone.`,
-    company: `Professional, credible, and value-driven. Focus on insights and actionable advice. Be authoritative but not corporate. Emphasize results and transformation. Educational and informative tone.`,
-  },
-  company: `Nextyou is a career transformation platform that helps professionals navigate career transitions, develop new skills, and achieve their professional goals. We offer:
-\n- Personalized 1-on-1 career coaching
-- Skill development programs
-- Industry insights and market research
-- Resume and LinkedIn optimization
-- Interview preparation and negotiation support
-- Community of like-minded professionals
-\nOur mission: Empower every professional to take control of their career journey and unlock their full potential.`,
-  market: `Current Career Development Market Insights:
-\nIndustry Trends:
-- 65% of professionals are considering career changes post-pandemic
-- Remote work has opened new opportunities across geographies
-- Skills gap is widening; continuous learning is essential
-- Personal branding on LinkedIn is more important than ever
-- AI and automation are reshaping job markets`,
-  linkedin: `LinkedIn Algorithm Best Practices (2025):
-\nContent that performs well:
-- Posts between 1,000-1,500 characters get highest engagement
-- First 3 lines are crucial (visible before "see more")
-- Use line breaks for readability
-- 3-5 relevant hashtags (not more)
-- Ask questions to drive comments
-- Share personal stories and insights`,
-}
-
 export default function Page() {
-  const [selectedProfile, setSelectedProfile] = useState<string>("simmi")
+  const [selectedProfile, setSelectedProfile] = useState<ProfileId>("simmi")
   const [messages, setMessages] = useState<Message[]>([])
   const [inputMessage, setInputMessage] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -151,28 +66,85 @@ export default function Page() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const showToastWithMessage = (message: string) => {
+  const showToastWithMessage = useCallback((message: string) => {
     setToastMessage(message)
     setShowToast(true)
     setTimeout(() => setShowToast(false), 3000)
-  }
+  }, [])
 
   const [prompts, setPrompts] = useState<PromptState>(initialPrompts)
 
-  const handlePromptUpdate = (section: PromptSection, value: string) => {
+  const refreshPrompts = useCallback(async () => {
+    try {
+      const response = await fetch("/api/prompts")
+      if (!response.ok) {
+        throw new Error("Failed to fetch prompts")
+      }
+      const data = await response.json()
+      if (data.prompts) {
+        setPrompts(data.prompts)
+      }
+    } catch (error) {
+      console.error("Failed to load prompts", error)
+      showToastWithMessage("Unable to sync prompts - using defaults")
+      setPrompts(initialPrompts)
+    }
+  }, [showToastWithMessage])
+
+  const refreshPosts = useCallback(async () => {
+    try {
+      const response = await fetch("/api/posts")
+      if (!response.ok) {
+        throw new Error("Failed to fetch posts")
+      }
+      const data = await response.json()
+      setScheduledPosts(data.posts ?? [])
+    } catch (error) {
+      console.error("Failed to load scheduled posts", error)
+      showToastWithMessage("Unable to load calendar data")
+    }
+  }, [showToastWithMessage])
+
+  useEffect(() => {
+    refreshPrompts()
+    refreshPosts()
+  }, [refreshPrompts, refreshPosts])
+
+  const handlePromptUpdate = async (section: PromptSection, value: string) => {
     setPrompts(prev => ({
       ...prev,
-      [section]: typeof prev[section] === "object" && !["company", "market", "linkedin", "master"].includes(section)
-        ? { ...(prev[section] as Record<string, string>), [selectedProfile]: value }
+      [section]: isProfileScoped(section)
+        ? { ...(prev[section] as Record<ProfileId, string>), [selectedProfile]: value }
         : value,
     }))
     setEditingPrompt(null)
+
+    try {
+      const response = await fetch("/api/prompts", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          section,
+          content: value,
+          profile: isProfileScoped(section) ? selectedProfile : "global",
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to save prompt")
+      }
+
+      showToastWithMessage("Prompt updated")
+    } catch (error) {
+      console.error("Error updating prompt", error)
+      showToastWithMessage("Unable to sync prompt")
+    }
   }
 
   const getCurrentPrompt = (section: PromptSection): string => {
     const prompt = prompts[section]
-    if (typeof prompt === "object" && !["company", "market", "linkedin", "master"].includes(section)) {
-      return (prompt as Record<string, string>)[selectedProfile] || ""
+    if (isProfileScoped(section) && typeof prompt === "object") {
+      return (prompt as Record<ProfileId, string>)[selectedProfile] || ""
     }
     return typeof prompt === "string" ? prompt : ""
   }
@@ -280,26 +252,79 @@ When creating LinkedIn posts:
     setShowSaveModal(true)
   }
 
-  const savePost = (date: string, time: string, notes: string) => {
-    const newPost: ScheduledPost = {
-      id: Date.now(),
-      content: postToSave,
-      date,
-      time,
-      notes,
-      profile: selectedProfile,
-      profileName: profiles.find(p => p.id === selectedProfile)?.name || "Nextyou",
-      createdAt: new Date().toISOString(),
+  const savePost = async (date: string, time: string, notes: string) => {
+    if (!postToSave.trim()) {
+      showToastWithMessage("Add content before saving")
+      return
     }
-    setScheduledPosts(prev => [...prev, newPost])
-    setShowSaveModal(false)
-    showToastWithMessage("Post saved to calendar")
+
+    try {
+      const response = await fetch("/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: postToSave,
+          date,
+          time,
+          notes,
+          profile: selectedProfile,
+          profileName: profiles.find(p => p.id === selectedProfile)?.name || "Nextyou",
+        }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to save post")
+      }
+
+      setScheduledPosts(prev => [...prev, data.post as ScheduledPost])
+      setShowSaveModal(false)
+      setPostToSave("")
+      showToastWithMessage("Post saved to calendar")
+    } catch (error) {
+      console.error("Error saving post", error)
+      showToastWithMessage("Unable to save post")
+    }
   }
 
-  const deletePost = (id: number) => {
-    setScheduledPosts(prev => prev.filter(post => post.id !== id))
-    setViewingPost(null)
-    showToastWithMessage("Post deleted")
+  const deletePost = async (id: string) => {
+    try {
+      const response = await fetch(`/api/posts/${id}`, { method: "DELETE" })
+      const data = response.ok ? null : await response.json()
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to delete post")
+      }
+
+      setScheduledPosts(prev => prev.filter(post => post.id !== id))
+      setViewingPost(null)
+      showToastWithMessage("Post deleted")
+    } catch (error) {
+      console.error("Error deleting post", error)
+      showToastWithMessage("Unable to delete post")
+    }
+  }
+
+  const reschedulePost = async (id: string, dateValue: string, timeValue: string, notesValue?: string) => {
+    try {
+      const response = await fetch(`/api/posts/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: dateValue, time: timeValue, notes: notesValue }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to update post")
+      }
+
+      setScheduledPosts(prev => prev.map(post => (post.id === id ? (data.post as ScheduledPost) : post)))
+      showToastWithMessage("Post rescheduled")
+      return true
+    } catch (error) {
+      console.error("Error updating post", error)
+      showToastWithMessage("Unable to update post")
+      return false
+    }
   }
 
   const getPostsForDate = (date: Date) => {
@@ -528,11 +553,12 @@ When creating LinkedIn posts:
     const [rescheduleDate, setRescheduleDate] = useState(post.date)
     const [rescheduleTime, setRescheduleTime] = useState(post.time)
 
-    const handleReschedule = () => {
-      setScheduledPosts(prev => prev.map(p => (p.id === post.id ? { ...p, date: rescheduleDate, time: rescheduleTime } : p)))
-      setShowReschedule(false)
-      setViewingPost(null)
-      showToastWithMessage("Post rescheduled")
+    const handleReschedule = async () => {
+      const success = await reschedulePost(post.id, rescheduleDate, rescheduleTime)
+      if (success) {
+        setShowReschedule(false)
+        setViewingPost(null)
+      }
     }
 
     return (
