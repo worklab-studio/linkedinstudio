@@ -26,7 +26,6 @@ import {
   type PromptState,
   type PromptSection,
   type ProfileId,
-  isProfileScoped,
 } from "@/lib/prompts"
 
 type Message = {
@@ -112,17 +111,15 @@ export default function Page() {
     refreshPosts()
   }, [refreshPrompts, refreshPosts])
 
-  const updatePromptState = useCallback(
-    (section: PromptSection, value: string, profile: ProfileId) => {
-      setPrompts(prev => ({
-        ...prev,
-        [section]: isProfileScoped(section)
-          ? { ...(prev[section] as Record<ProfileId, string>), [profile]: value }
-          : value,
-      }))
-    },
-    []
-  )
+  const updatePromptState = useCallback((section: PromptSection, value: string, profile: ProfileId) => {
+    setPrompts(prev => ({
+      ...prev,
+      [section]: {
+        ...(prev[section] ?? {}),
+        [profile]: value,
+      },
+    }))
+  }, [])
 
   const startEditingPrompt = (section: PromptSection) => {
     setEditingPrompt(section)
@@ -139,7 +136,7 @@ export default function Page() {
     if (!editingPrompt) return
     const section = editingPrompt
     const value = editingPromptValue
-    const profileForUpdate = isProfileScoped(section) ? editingProfile : selectedProfile
+    const profileForUpdate = editingProfile
 
     updatePromptState(section, value, profileForUpdate)
     setEditingPrompt(null)
@@ -152,7 +149,7 @@ export default function Page() {
         body: JSON.stringify({
           section,
           content: value,
-          profile: isProfileScoped(section) ? profileForUpdate : "global",
+          profile: profileForUpdate,
         }),
       })
 
@@ -169,11 +166,7 @@ export default function Page() {
   }
 
   const getCurrentPrompt = (section: PromptSection): string => {
-    const prompt = prompts[section]
-    if (isProfileScoped(section) && typeof prompt === "object") {
-      return (prompt as Record<ProfileId, string>)[selectedProfile] || ""
-    }
-    return typeof prompt === "string" ? prompt : ""
+    return prompts[section]?.[selectedProfile] || ""
   }
 
   const buildSystemPrompt = () => {

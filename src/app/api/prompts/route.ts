@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { getSupabaseClient } from "@/lib/supabase"
-import { initialPrompts, isProfileScoped, type PromptState, type PromptSection, type ProfileId } from "@/lib/prompts"
+import { initialPrompts, type PromptState, type PromptSection, type ProfileId } from "@/lib/prompts"
 
 const clonePrompts = (): PromptState => JSON.parse(JSON.stringify(initialPrompts))
 
@@ -25,11 +25,7 @@ export async function GET() {
       const profile = (row.profile as ProfileId) || "simmi"
       const content = row.content ?? ""
 
-      if (isProfileScoped(section)) {
-        ;(normalized[section] as Record<ProfileId, string>)[profile] = content
-      } else {
-        normalized[section] = content as string
-      }
+      normalized[section][profile] = content
     })
 
     return NextResponse.json({ prompts: normalized })
@@ -47,17 +43,11 @@ export async function PUT(request: Request) {
     const body = await request.json()
     const section = body.section as PromptSection
     const content = body.content as string
-    const profileInput = (body.profile as ProfileId | "global" | undefined) ?? "global"
+    const profileValue = body.profile as ProfileId
 
-    if (!section || typeof content !== "string") {
+    if (!section || typeof content !== "string" || !profileValue) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 })
     }
-
-    if (isProfileScoped(section) && (profileInput === "global" || !body.profile)) {
-      return NextResponse.json({ error: "Profile is required for this section" }, { status: 400 })
-    }
-
-    const profileValue = isProfileScoped(section) ? (profileInput as ProfileId) : "global"
     const supabase = getSupabaseClient()
 
     const { error } = await supabase.from("prompts").upsert(
