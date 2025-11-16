@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 
 import { getSupabaseClient } from "@/lib/supabase"
 import type { ProfileId } from "@/lib/prompts"
@@ -25,15 +25,11 @@ const mapRowToPost = (row: PostRow) => ({
   createdAt: row.created_at,
 })
 
-type Params = {
-  params: {
-    id: string
-  }
-}
+type Params = Promise<{ id: string }>
 
-export async function PUT(request: Request, { params }: Params) {
+export async function PUT(request: NextRequest, context: { params: Params }) {
   try {
-    const { id } = params
+    const { id } = await context.params
     const body = await request.json()
     const { date, time, notes } = body
 
@@ -60,9 +56,9 @@ export async function PUT(request: Request, { params }: Params) {
   }
 }
 
-export async function DELETE(_request: Request, { params }: Params) {
+export async function DELETE(_request: NextRequest, context: { params: Params }) {
   try {
-    const { id } = params
+    const { id } = await context.params
     if (!id) {
       return NextResponse.json({ error: "Missing post id" }, { status: 400 })
     }
